@@ -1,0 +1,177 @@
+#include "Protheus.ch"
+#include "topconn.ch"
+#include "tbiconn.ch"
+
+/*/{Protheus.doc} ImprimePallet
+Função responsável por fazer a impressao dos pallets baseado no filtro dos usuários
+@type function
+@author Vinicius Franceschi
+@since 09/03/2024
+@version P12
+@database MSSQL,Oracle
+/*/
+
+User Function ImprimePallet()
+	Local oReport
+
+	Private cPerg := "IMPZZD"
+	Private DePallet        := ""
+	Private AtePallet       := ""
+	Private deCodMontagem   := ""
+	Private ateCodMontagem  := ""
+	Private DeNotaFiscal    := ""
+	Private AteNotaFiscal   := ""
+
+	Pergunte(cPerg,.F.)
+
+	oReport := ReportDef()
+	oReport:PrintDialog()
+
+Return
+
+/*/{Protheus.doc} ReportDef
+@type function
+@author Vinicius Franceschi
+@since 09/03/2024
+@version P12
+@database MSSQL,Oracle
+/*/
+Static Function ReportDef()
+	Local oReport
+	Local oSection1
+	Local oSection2
+	Local cTitulo := "Impressao dos Pallets"
+
+	oReport := TReport():New('ImprimePallet',cTitulo,cPerg, {|oReport|PrintReport(oReport)})
+	oReport:SetLandscape()
+	oReport:SetTotalInLine(.F.)
+
+	oSection1 := TRSection():New(oReport,'Pallets')
+
+	TRCell():New(oSection1, 'ZZD_CODM'		, , 'Cód. Montagem'		, '' , TamSx3('ZZD_CODM')[1])
+	TRCell():New(oSection1, 'ZZD_PALLET' 	, , 'Pallet'			, '' , TamSx3('ZZD_PALLET')[1])
+	TRCell():New(oSection1, 'ZZD_CLIENT' 	, , 'Cliente'			, '' , TamSx3('ZZD_CLIENT')[1])
+	TRCell():New(oSection1, 'ZZD_LOJA' 		, , 'Loja'				, '' , TamSx3('ZZD_LOJA')[1])
+	TRCell():New(oSection1, 'A1_NOME' 		, , 'Nome Cliente'		, '' , TamSx3('A1_NOME')[1])
+
+	//oSection2 := TRSection():New(oReport,'Itens')
+	oSection2 := TRSection():New(oSection1,'Pallets') //para que as duas sessoes fiquem unica no formato de tabela em Excel, nao criando abas
+
+	TRCell():New(oSection2, 'ZZD_PEDIDO' 	, , ' Num Pedido '		, '' , TamSx3('ZZD_PEDIDO')[1])
+	TRCell():New(oSection2, 'ZZD_DOC' 		, , ' Nota Fiscal'		, '' , TamSx3('ZZD_DOC')[1])
+	TRCell():New(oSection2, 'ZZD_SERIE' 	, , ' Série'			, '' , TamSx3('ZZD_SERIE')[1])
+	TRCell():New(oSection2, 'ZZD_CODPRD' 	, , ' Cód. Produto'		, '' , TamSx3('ZZD_CODPRD')[1])
+	TRCell():New(oSection2, 'ZZD_DESC' 		, , ' Descrição'		, '' , TamSx3('ZZD_DESC')[1])
+	TRCell():New(oSection2, 'ZZD_QTDCX' 	, , ' Qtd. Caixas'		, '' , TamSx3('ZZD_QTDCX')[1])
+	TRCell():New(oSection2, 'ZZD_LOTE' 		, , ' Lote'				, '' , TamSx3('ZZD_LOTE')[1])
+	TRCell():New(oSection2, 'ZZD_USER' 		, , ' Usuário'			, '' , TamSx3('ZZD_USER')[1])
+
+Return oReport
+
+/*/{Protheus.doc} PrintReport
+@type function
+@author Vinicius Franceschi
+@since 09/03/2024
+@version P12
+@database MSSQL,Oracle
+/*/
+Static Function PrintReport(oReport)
+	Local oSection1 := oReport:Section(1)
+	Local oSection2 := oReport:Section(1):Section(1)
+	Local cQuery := ""
+	Local cAlias := ""
+
+	Local cCodigoMontagem	:= ""
+	Local cPallet			:= ""
+
+	cQuery := GetQryDados()
+	TcQuery cQuery New Alias(cAlias:=GetNextAlias())
+	(cAlias)->(DbGoTop())
+
+	If (cAlias)->(!EOF())
+		cCodigoMontagem 	:= (cAlias)->ZZD_CODM
+		cPallet 			:= (cAlias)->ZZD_PALLET
+		oSection1:Init()
+		oSection1:Cell('ZZD_CODM'):SetValue((cAlias)->ZZD_CODM)
+		oSection1:Cell('ZZD_PALLET'):SetValue((cAlias)->ZZD_PALLET)
+		oSection1:Cell('ZZD_CLIENT'):SetValue((cAlias)->ZZD_CLIENT)
+		oSection1:Cell('ZZD_LOJA'):SetValue((cAlias)->ZZD_LOJA)
+		oSection1:Cell('A1_NOME'):SetValue((cAlias)->A1_NOME)
+		oSection1:PrintLine()
+
+		While (cAlias)->(!EOF())
+			cCodigoMontagem 	:= (cAlias)->ZZD_CODM
+			cPallet 			:= (cAlias)->ZZD_PALLET
+
+			If 	cCodigoMontagem+cPallet == (cAlias)->ZZD_CODM+(cAlias)->ZZD_PALLET
+				oSection2:Init()
+			Endif
+
+			oSection2:Cell('ZZD_PEDIDO'):SetValue((cAlias)->ZZD_PEDIDO)
+			oSection2:Cell('ZZD_DOC'):SetValue(Alltrim((cAlias)->ZZD_DOC))
+			oSection2:Cell('ZZD_SERIE'):SetValue(Alltrim((cAlias)->ZZD_SERIE))
+			oSection2:Cell('ZZD_CODPRD'):SetValue((cAlias)->ZZD_CODPRD)
+			oSection2:Cell('ZZD_DESC'):SetValue(Alltrim((cAlias)->ZZD_DESC))
+			oSection2:Cell('ZZD_QTDCX'):SetValue((cAlias)->ZZD_QTDCX)
+			oSection2:Cell('ZZD_LOTE'):SetValue((cAlias)->ZZD_LOTE)
+			oSection2:Cell('ZZD_USER'):SetValue(Alltrim((cAlias)->ZZD_USER))
+			oSection2:PrintLine()
+
+			(cAlias)->(dbSkip())
+			If 	cCodigoMontagem+cPallet <> (cAlias)->ZZD_CODM+(cAlias)->ZZD_PALLET .AND. (cAlias)->(!EOF())
+				oSection1:Finish()
+				oSection2:Finish()
+				oReport:SkipLine(1)
+				oSection1:Init()
+				oSection1:Cell('ZZD_CODM'):SetValue((cAlias)->ZZD_CODM)
+				oSection1:Cell('ZZD_PALLET'):SetValue((cAlias)->ZZD_PALLET)
+				oSection1:Cell('ZZD_CLIENT'):SetValue((cAlias)->ZZD_CLIENT)
+				oSection1:Cell('ZZD_LOJA'):SetValue((cAlias)->ZZD_LOJA)
+				oSection1:Cell('A1_NOME'):SetValue((cAlias)->A1_NOME)
+				oSection1:PrintLine()
+			Endif
+		EndDo
+
+		(cAlias)->(dbCloseArea())
+	Endif
+
+Return
+
+/*/{Protheus.doc} getQryDados
+Rotina responsável por montar query para buscar os dados baseado no Filtro Informado
+@author Vinicius Franceschi
+@since 09/03/2024
+@version 1.0
+@type function
+/*/
+Static Function getQryDados()
+	Local cQuery        := ""
+
+	cQuery := " SELECT  " + CRLF
+	cQuery +=  " ZZD_CODM " + CRLF
+	cQuery +=  " ,ZZD_PALLET " + CRLF
+	cQuery +=  " ,ZZD_CLIENT " + CRLF
+	cQuery +=  " ,ZZD_LOJA " + CRLF
+	cQuery +=  " ,A1_NOME " + CRLF
+	cQuery +=  " ,ZZD_PEDIDO " + CRLF
+	cQuery +=  " ,ZZD_DOC " + CRLF
+	cQuery +=  " ,ZZD_SERIE " + CRLF
+	cQuery +=  " ,ZZD_CODPRD " + CRLF
+	cQuery +=  " ,ZZD_DESC " + CRLF
+	cQuery +=  " ,ZZD_QTDCX " + CRLF
+	cQuery +=  " ,ZZD_LOTE " + CRLF
+	cQuery +=  " ,ZZD_USER " + CRLF
+	cQuery += " FROM "  + RetSqlName("ZZD") + " ZZD " + CRLF
+
+	cQuery += " INNER JOIN " + retSqlName("SA1") + " SA1 " + CRLF
+	cQuery +=  " ON SA1.A1_COD = ZZD.ZZD_CLIENT  "+ CRLF
+	cQuery +=  " AND SA1.A1_LOJA = ZZD.ZZD_LOJA" + CRLF
+	cQuery +=  " AND SA1.D_E_L_E_T_ = ''" + CRLF
+
+	cQuery += " WHERE ZZD.ZZD_FILIAL ='" + FWxFilial("ZZD") + "'" + CRLF
+	cQuery += " AND ZZD.ZZD_PALLET >='" + MV_PAR01 + "' AND ZZD.ZZD_PALLET <='" + MV_PAR02 + "' " + CRLF
+	cQuery += " AND ZZD.ZZD_CODM >='" + MV_PAR03 + "' AND ZZD.ZZD_CODM <='" + MV_PAR04 + "' " + CRLF
+	cQuery += " AND ZZD.ZZD_DOC  >='" + MV_PAR05 + "' AND ZZD.ZZD_DOC  <='" + MV_PAR06 + "' " + CRLF
+	cQuery += " AND ZZD.D_E_L_E_T_ = '' " + CRLF
+
+Return cQuery
