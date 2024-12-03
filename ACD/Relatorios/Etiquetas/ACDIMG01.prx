@@ -1,0 +1,610 @@
+#INCLUDE "TOTVS.CH"
+#INCLUDE "topconn.ch"
+/*/{Protheus.doc} Img01
+ RDMake para impressão personalizada do Design de Etiqueta
+@type function
+@version  1.0
+@author Jair Matos
+@since 21/06/2024
+@param cCodEti, character, Codigo etiqueta
+@param cRet, character, Retorno da Impressão da Etiqueta
+@see PSTIPLT / ACDIMG00.PRX - PARAMIXB=ACDI10NF fonte que inprime a segunda etiqueta
+/*/
+User Function Img01(cCodEti)
+	Local aParam 	:= {}
+	Local cRet		:= ""
+	Local lNewEtq	:= .T.//etiqueta nova
+
+	If Type("ParamIXB") == "A"
+		aParam := ParamIXB
+	EndIf
+
+	if FWIsInCallStack("MATA140")
+		If cFilant=='0201'//KILT 0201
+			cRet := U_PEMP0201(lNewEtq)
+		else
+			cRet := U_PSTX140(aParam)
+		EndIf
+	ELSEIF FWIsInCallStack("u_PYTMPES")
+		cRet := U_PSTXPES(aParam)// PESAGEM
+	ENDIF
+
+Return cRet
+/*/{Protheus.doc} PEMP0201
+Imprime etiqueta da PRE NOTA FILIAL 0201 - KILT
+@type function
+@version 1.0 
+@author Jair Matos
+@since 21/06/2024
+@param aParam, array, array com os dados
+@return variant, retorna resultado
+/*/
+User Function PEMP0201(lNewEtq)
+	Local nX 		:= 0
+	Local cCodEti  	:= ""
+	Local cLoteCTL 	:= ""
+	Local dDtValid 	:= ""
+	Local cCodPrd  	:= ""
+	Local cCliSA7   := ""
+	Local cNomeSA1	:= ""
+	Local xQuant   	:= 0
+	Local dDtFab    := ""
+	Local nQTDD1    := 0
+	Local nQtdB1    := 0
+	Local xcopias   := 0
+	Local cPorta	:= Nil
+	Local cDescSB1	:= SB1->B1_DESC
+	Local cEMaxSB1	:= SB1->B1_XEMPMAX
+	Local cBarSB1	:= SB1->B1_XDUN14//SB1->B1_CODBAR
+	Local i
+	Local xArray 	:={}
+	Local cRet		:= ""
+	Local cTpImp 	:= SuperGetMV("MV_XTPIMP",.F.,"000001")
+	Local cQuery	:= ""
+	local cAliasSA7	:= getNextAlias()
+	Local aEtiq		:= {}
+	Local aItens	:= {}
+
+	IF !EMPTY(ALLTRIM(SD1->D1_XMARCA)) .AND. funname()<>"PEST008"
+		Return cRet
+	ENDIF
+
+	//IF SB1->B1_XITPES <> 'S'
+
+		cQuery := " SELECT  A7_CLIENTE, A7_LOJA ,A1_NOME FROM "+RetSQLName("SA7")+ " SA7 "
+		cQuery += " JOIN "+RetSQLName("SA1")+ " SA1 "
+		cQuery += " ON  A1_COD = A7_CLIENTE AND A1_LOJA = A7_LOJA AND SA1.D_E_L_E_T_ <> '*' "
+		cQuery += " WHERE SA7.D_E_L_E_T_ <> '*' "
+		cQuery += " AND A7_PRODUTO ='"+SD1->D1_COD+"' "
+		TCQuery cQuery New Alias &cAliasSA7
+		If (cAliasSA7)->(!EOF())
+			cCliSA7 := (cAliasSA7)->A7_CLIENTE
+			cNomeSA1:= (cAliasSA7)->A1_NOME
+		EndIf
+		(cAliasSA7)->(DbCloseArea())
+
+
+		If lNewEtq
+			nQtdB1 := SB1->B1_CONV
+
+			nQTDD1 := SD1->D1_QUANT
+
+			if nQtdB1 <> 0
+				nARes := MOD(nQTDD1,nQtdB1)
+
+				if nARes > 0
+					xcopias :=  (nQTDD1/nQtdB1)
+					xcopias := int(xcopias)
+					xcopias++
+					IF xcopias >= 2
+						for i:= 1 to (xcopias - 1)
+							aAdd(xArray, nQtdB1)
+						next i
+						aAdd(xArray, nARes)
+					else
+						aAdd(xArray, nQTDD1)
+					endif
+				else
+					xcopias :=	(nQTDD1/nQtdB1)
+					for i:= 1 to xcopias
+						aAdd(xArray, nQtdB1)
+					next i
+				endif
+			else
+				xcopias := 1
+				aAdd(xArray, nQTDD1)
+			endif
+
+			For nX := 1 to len(xArray)
+				// Gravacao na tabela Personalizada
+				xQuant   := xArray[nx]
+				cCodEti  := GETMV("MV_CODCB0")
+				cLoteCTL := SD1->D1_LOTECTL
+				dDtValid := SD1->D1_DTVALID
+				cCodPrd  := SD1->D1_COD
+
+				ZZC->(DbSetOrder(1))
+				IF !(ZZC->(dbSeek(xFilial("ZZC") + cCodEti)))
+					ZZC->(Reclock("ZZC",.T.))
+					ZZC->ZZC_CODETI 	:= cCodEti
+					ZZC->ZZC_DTCRIA 	:= DDATABASE
+					ZZC->ZZC_TIPO 		:= "E"
+					ZZC->ZZC_CODPRD 	:= SD1->D1_COD
+					ZZC->ZZC_DESC 		:= cDescSB1
+					ZZC->ZZC_QUANT 		:= nQtdB1//Luciane pediu para alterar 01-12-24 antes era xQuant
+					ZZC->ZZC_QTDORI		:= SD1->D1_QUANT
+					ZZC->ZZC_USER 		:= __cUserId
+					ZZC->ZZC_LOCAL		:= SD1->D1_LOCAL
+					ZZC->ZZC_LOTE		:= SD1->D1_LOTECTL
+					ZZC->ZZC_DTVLD 		:= SD1->D1_DTVALID
+					IF !EMPTY(dDtFab)
+						ZZC->ZZC_DTFABR	:= SD1->D1_DFABRIC
+					ENDIF
+					ZZC->ZZC_OP 		:= ""
+					ZZC->ZZC_OPES 		:= ""
+					ZZC->ZZC_VOLUME 	:= ""
+					ZZC->ZZC_PDV 		:= ""
+					ZZC->ZZC_NFSAI 		:= ""
+					ZZC->ZZC_SERNF 		:= ""
+					ZZC->ZZC_NFITEM 	:= ""
+					ZZC->ZZC_FORN 		:= SD1->D1_FORNECE
+					ZZC->ZZC_LOJA 		:= SD1->D1_LOJA
+					ZZC->ZZC_NFORNE 	:= Posicione("SA2",1,xFilial("SA2")+SD1->D1_FORNECE+SD1->D1_LOJA,"SA2->A2_NOME")
+					ZZC->ZZC_FLOTE 		:= SD1->D1_LOTEFOR
+					ZZC->ZZC_NFENT 		:= SD1->D1_DOC
+					ZZC->ZZC_NFSER 		:= SD1->D1_SERIE
+					ZZC->ZZC_ITEMNF 	:= SD1->D1_ITEM
+
+					ZZC->(MSUnlock())
+
+					PUTMV("MV_CODCB0", SOMA1(cCodEti))
+				ENDIF
+				aEtiq:= {}
+				aadd(aEtiq, cDescSB1)
+				aAdd(aEtiq, cCliSA7)
+				aAdd(aEtiq, cNomeSA1)
+				aadd(aEtiq, cEMaxSB1)
+				aadd(aEtiq, xQuant)
+				aadd(aEtiq, cBarSB1)
+				aAdd(aEtiq, cLoteCTL)
+				aAdd(aEtiq, cCodEti)
+				aadd(aEtiq, dDtValid)
+				aadd(aEtiq, cCodPrd)
+				aAdd(aItens,aEtiq)
+
+			Next nX
+		Else
+
+			cQuery := " SELECT  ZZC_CODETI,ZZC_FORN,ZZC_LOTE,ZZC_CODPRD,ZZC_DTVLD,ZZC_QUANT "
+			cQuery += " FROM "+RetSQLName("ZZC")+ " "
+			cQuery += " WHERE D_E_L_E_T_ <> '*' "
+			cQuery += " AND ZZC_NFENT ='"+SD1->D1_DOC+"' "
+			cQuery += " AND ZZC_NFSER ='"+SD1->D1_SERIE+"' "
+			cQuery += " AND ZZC_ITEMNF ='"+SD1->D1_ITEM+"' "
+			cQuery += " AND ZZC_CODPRD ='"+SD1->D1_COD+"' "
+			cQuery += " AND ZZC_FORN ='"+SD1->D1_FORNECE+"' "
+			cQuery += " AND ZZC_LOJA ='"+SD1->D1_LOJA+"' "
+
+			TCQuery cQuery New Alias &cAliasSA7
+
+			If (cAliasSA7)->(!EOF())
+				While ( cAliasSA7)->( ! Eof() )
+					aEtiq:= {}
+					aadd(aEtiq, cDescSB1)
+					aAdd(aEtiq, cCliSA7)
+					aAdd(aEtiq, cNomeSA1)
+					aadd(aEtiq, cEMaxSB1)
+					aadd(aEtiq, (cAliasSA7)->ZZC_QUANT)
+					aadd(aEtiq, cBarSB1)
+					aAdd(aEtiq, (cAliasSA7)->ZZC_LOTE)
+					aAdd(aEtiq, (cAliasSA7)->ZZC_CODETI)
+					aadd(aEtiq, Stod((cAliasSA7)->ZZC_DTVLD))
+					aadd(aEtiq, (cAliasSA7)->ZZC_CODPRD)
+					aAdd(aItens,aEtiq)
+					( cAliasSA7)->( DBSkip() )
+				Enddo
+			EndIf
+
+			(cAliasSA7)->(DbCloseArea())
+
+		EndIf
+
+		For nX  := 1 To Len (aItens)
+
+			cZPL := "^XA~TA000~JSN^LT0^MNW^MTT^PON^PMN^LH0,0^JMA^PR4,4~SD15^JUS^LRN^CI0^XZ"+CRLF
+			cZPL += "^XA"+CRLF
+			cZPL += "^MMT"+CRLF
+			cZPL += "^PW1199"+CRLF
+			cZPL += "^LL0799"+CRLF
+			cZPL += "^LS0"+CRLF
+			cZPL += "^FT23,160^ACN,36,20^FH\^FD"+ Alltrim(FWNoAccent(aItens[nX][1])) + " ^FS"+CRLF
+			cZPL += "^FT23,220^ACN,36,20^FH\^FDCODIGO CLIENTE:"+ FWNoAccent(aItens[nX][2]) + " ^FS"+CRLF
+			cZPL += "^FT23,280^ACN,36,20^FH\^FDCLIENTE:"+ FWNoAccent(aItens[nX][3]) + "^FS"+CRLF
+			cZPL += "^FT23,340^ACN,36,20^FH\^FDEMPILHAMENTO MAX.:^FS"+CRLF
+			cZPL += "^FT465,340^A0N,36,36^FH\^FD" + Iif(Empty(aItens[nX][4]),"", aItens[nX][4]+" caixas")+ "^FS"+CRLF
+			cZPL += "^FT27,400^ACN,36,20^FH\^FDCONTEUDO:^FS"+CRLF
+			cZPL += "^FT249,400^A0N,36,36^FH\^FD" + Alltrim(cValToChar(aItens[nX][5])) +" un." + "^FS"+CRLF
+			cZPL += "^FT773,336^ACN,36,20^FH\^FD" + "USO INTERNO" + "^FS"+CRLF
+			cZPL += "^BY2,2,130^FT750,475^BCN,,Y,N"+CRLF
+			cZPL += "^FD>:" +aItens[nX][8]+ "^FS"+CRLF
+			cZPL += "^FT27,517^ACN,36,20^FH\^FDLOTE:^FS"+CRLF
+			cZPL += "^FT27,577^A0N,54,52^FH\^FD" + aItens[nX][7]+ "^FS"+CRLF
+			cZPL += "^FT250,517^ACN,36,20^FH\^FDVAL:^FS"+CRLF
+			cZPL += "^FT678,580^ACN,36,20^FH\^FDCOD.DUN14^FS"+CRLF
+			cZPL += "^BY3,3,130^FT510,720^BCN,,Y,N"+CRLF
+			cZPL += "^FD>:"+aItens[nX][6]+"^FS"+CRLF
+			cZPL += "^FT250,577^A0N,54,52^FH\^FD" + PADL(Alltrim(cValtochar(Month(aItens[nX][9]))),2,"0")+ "-" + cValToChar(Year(aItens[nX][9])) + "^FS"+CRLF
+			cZPL += "^FT23,772^ACN,28,22^FH\^FDE1^FS"+CRLF
+			cZPL += "^FT200,91^A0N,79,74^FB947,1,0,C^FH\^FD"+aItens[nX][10]+"^FS"+CRLF
+			cZPL += "^PQ1,0,1,Y^XZ"+CRLF
+
+			If ! CB5->(DbSeek(xFilial("CB5")+cTpImp))
+				conout("Tipo de Impressão "+cTpImp+" não existe ou nao foi preenchido!")
+				Return
+			EndIf
+
+			cModelo :=Trim(CB5->CB5_MODELO)
+			If cPorta ==NIL
+				If CB5->CB5_TIPO == '4'
+					cPorta:= "IP"
+				Else
+					IF CB5->CB5_PORTA $ "12345"
+						cPorta  :='COM'+CB5->CB5_PORTA+':'+CB5->CB5_SETSER
+					EndIf
+					IF CB5->CB5_LPT $ "12345"
+						cPorta  :='LPT'+CB5->CB5_LPT+':'
+					EndIf
+				EndIf
+			EndIf
+
+			lTipo   :=CB5->CB5_TIPO $ '12'
+			nPortIP :=Val(CB5->CB5_PORTIP)
+			cServer :=Trim(CB5->CB5_SERVER)
+			cEnv    :=Trim(CB5->CB5_ENV)
+			cFila   := NIL
+			If CB5->CB5_TIPO=="3"
+				cFila := Alltrim(Tabela("J3",CB5->CB5_FILA,.F.))
+			EndIf
+			nBuffer := CB5->CB5_BUFFER
+			lDrvWin := (CB5->CB5_DRVWIN =="1")
+
+			MSCBPRINTER(cModelo,cPorta,,,lTipo,nPortIP,cServer,cEnv,nBuffer,cFila,lDrvWin,Trim(CB5->CB5_PATH))
+			MSCBCHKSTATUS(CB5->CB5_VERSTA =="1")
+			msCbInfoEti("", "")
+			//MSCBLOADGRF('abix.grf')
+			MscbBegin( 1, 6 )
+			MscbWrite( cZPL )
+			cRet := MscbEnd()
+			msCbClosePrinter()
+
+		Next nX
+
+		If lNewEtq
+			SD1->(Reclock("SD1",.F.))
+			SD1->D1_XMARCA := "X"
+			SD1->(MSUnlock())
+		EndIf
+
+	//ENDIF
+
+Return cRet
+/*/{Protheus.doc} PSTX140
+Imprime ETIQUETA PRE NOTA
+@type function
+@version 1.0	
+@author Jair Matos
+@since 24/06/2024
+@param aParam, array, array com dados
+@return variant, retorna variavel com dados da etiqueta
+/*/
+User Function PSTX140(aParam)
+	Local nX 		:= 0
+	Local cCodEti  := ""
+	Local dDTCria  := ""
+	Local cTipo    := ""
+	Local cCodPrd  :=  ""
+	Local cDescPrd := ""
+	Local xQuant   := 0
+	Local nQtdOri  := ""
+	Local cUser    := ""
+	Local cLocal    := ""
+	Local cLote     := ""
+	Local dDTVld    := ""
+	Local dDtFab    := ""
+	Local cOp       := ""
+	Local cPesagem  := ""
+	Local cFornece    := ""
+	Local cLojaFor    := ""
+	Local cNFor    	  := ""
+	Local cNFent      := ""
+	Local cNFSerE     := ""
+	Local cItemNFE    := ""
+	Local cVolume     := ""
+	Local cPDV    	  := ""
+	Local cNFSai   	  := ""
+	Local cNFSerS     := ""
+	Local cItemNFS    := ""
+	Local nQTDD1      := 0
+	Local nQTDB5      := 0
+	Local xcopias     := 0
+	Local i
+	Local xArray :={}
+	Local FLote 	  	:= ""
+	Local cRet			:= ""
+
+
+	IF !EMPTY(ALLTRIM(SD1->D1_XMARCA))
+		Return
+	ENDIF
+
+	DbSelectArea("SB5")
+	SB5->(DbSetOrder(1))
+	IF SB5->(DBSeek(xFilial("SB5") + SD1->D1_COD))
+
+		IF SB1->B1_XITPES <> 'S'
+
+
+			nQTDB5 := SB5->B5_QEI
+
+			nQTDD1 := SD1->D1_QUANT
+
+			if nQTDB5 <> 0
+				nARes := MOD(nQTDD1,nQTDB5)
+
+				if nARes > 0
+					xcopias :=  (nQTDD1/nQTDB5)
+					xcopias := int(xcopias)
+					xcopias++
+					IF xcopias >= 2
+						for i:= 1 to (xcopias - 1)
+							aAdd(xArray, nQTDB5)
+						next i
+						aAdd(xArray, nARes)
+					else
+						aAdd(xArray, nQTDD1)
+					endif
+				else
+					xcopias :=	(nQTDD1/nQTDB5)
+					for i:= 1 to xcopias
+						aAdd(xArray, nQTDB5)
+					next i
+				endif
+			else
+				xcopias := 1
+				aAdd(xArray, nQTDD1)
+			endif
+
+
+			For nX := 1 to len(xArray)
+				// Gravacao na tabela Personalizada
+				cCodEti  := GETMV("MV_CODCB0")
+				dDTCria  := DDATABASE
+
+				cCodPrd  := SD1->D1_COD
+				cDescPrd := SB1->B1_DESC
+				xQuant   := xArray[nx]
+				nQtdOri  := SD1->D1_QUANT
+				cUser    := __cUserId
+
+				cLocal    := SD1->D1_LOCAL
+				cLote     := SD1->D1_LOTECTL
+				dDTVld    := SD1->D1_DTVALID
+				dDtFab   := SD1->D1_DFABRIC
+				cOp       := ""
+				cPesagem  := ""
+
+				cFornece    := SD1->D1_FORNECE
+				cLojaFor    := SD1->D1_LOJA
+				cNFor    	:= Posicione("SA2",1,xFilial("SA2")+SD1->D1_FORNECE+SD1->D1_LOJA,"SA2->A2_NOME")
+				cNFent    	:= SD1->D1_DOC
+				cNFSerE    	:= SD1->D1_SERIE
+				cItemNFE    := SD1->D1_ITEM
+				cVolume    	:= ""
+				cPDV    	:= ""
+				cNFSai   	:= ""
+				cNFSerS   	:= ""
+				cItemNFS    := ""
+				FLote		:= SD1->D1_LOTEFOR
+
+				ZZC->(DbSetOrder(1))
+				IF !(ZZC->(dbSeek(xFilial("ZZC") + cCodEti)))
+					ZZC->(Reclock("ZZC",.T.))
+
+					ZZC->ZZC_CODETI 	:= cCodEti
+					ZZC->ZZC_DTCRIA 	:= dDTCria
+					ZZC->ZZC_TIPO 		:= cTipo
+					ZZC->ZZC_CODPRD 	:= cCodPrd
+					ZZC->ZZC_DESC 		:= cDescPrd
+					ZZC->ZZC_QUANT 		:= xQuant
+					ZZC->ZZC_QTDORI		:= nQtdOri
+					ZZC->ZZC_USER 		:= cUser
+					ZZC->ZZC_LOCAL		:= cLocal
+					ZZC->ZZC_LOTE		:= cLote
+					ZZC->ZZC_DTVLD 		:= dDTVld
+					IF !EMPTY(dDtFab)
+						ZZC->ZZC_DTFABR	:= dDtFab
+					ENDIF
+					ZZC->ZZC_OP 		:= cOp
+					ZZC->ZZC_OPES 		:= cPesagem
+					ZZC->ZZC_FORN 		:= cFornece
+					ZZC->ZZC_LOJA 		:= cLojaFor
+					ZZC->ZZC_NFORNE 	:= cNFor
+					ZZC->ZZC_NFENT 		:= cNFent
+					ZZC->ZZC_NFSER 		:= cNFSerE
+					ZZC->ZZC_ITEMNF 	:= cItemNFE
+					ZZC->ZZC_VOLUME 	:= cVolume
+					ZZC->ZZC_PDV 		:= cPDV
+					ZZC->ZZC_NFSAI 		:= cNFSai
+					ZZC->ZZC_SERNF 		:= cNFSerS
+					ZZC->ZZC_NFITEM 	:= cItemNFS
+					ZZC->ZZC_FLOTE 		:= FLote
+
+					ZZC->(MSUnlock())
+
+					PUTMV("MV_CODCB0", SOMA1(cCodEti))
+
+				ENDIF
+
+
+				cZPL := ""
+				cZPL += "^XA""
+				cZPL += "^MMT"
+				cZPL += "^PW832"
+				cZPL += "^LL0960"
+				cZPL += "^CF0,75"
+				cZPL += "^FO140,150^FD"	+ FWNoAccent(cCodPrd) +"^FS"
+				cZPL += "^CF5,30"
+				cZPL += "^FO150,230^FD"	+ FWNoAccent(cDescPrd) +"^FS"
+				cZPL += "^CF5,25"
+				cZPL += "^FO80,300^FDFORN:^FS"
+				cZPL += "^CF5,25"
+				cZPL += "^FO170,300^FD"+ FWNoAccent(cNFor) +"^FS"
+				cZPL += "^CF5,25"
+				cZPL += "^FO80,330^FDCONTEUDO:^FS"
+				cZPL += "^CF0,25"
+				cZPL += "^FO250,330^FD"	+ AllTrim( Str( xQuant ) ) + "/" + AllTrim( Str( nQtdOri ) ) + "^FS"
+				cZPL += "^CF5,25"
+				cZPL += "^FO80,360^FDVOLUME:^FS"
+				cZPL += "^CF0,25"
+				cZPL += "^FO190,530^FDE0:^FS"
+				cZPL +=  "^CF0,30"
+				cZPL += "^FO210,360^FD"	+ AllTrim( Str( nX ) ) + "/" + AllTrim( Str( xcopias ) ) + "^FS"
+				cZPL += "^FO230,420^BY2"
+				cZPL += "^BCN,135,Y,N,N,N"
+				cZPL += "^FD" + cCodEti + "^FS"
+				cZPL += "^CF5,30"
+				cZPL += "^FO130,610^FDLOTE:^FS"
+				cZPL += "^CF0,40"
+				cZPL += "^FO80,640^FD"	+ FWNoAccent(cLote) +"^FS"
+				cZPL += "^CF5,30"
+				cZPL += "^FO610,610^FDVAL:^FS"
+				cZPL += "^CF0,40"
+				//cZPL += "^FO530,640^FD"	+ DTOC(dDTVld) +"^FS"
+				cZPL += "^FO530,640^FD"	+ AllTrim( Substr( DTOS(dDTVld),7,2 ) ) + "-" + AllTrim( Substr( DTOS(dDTVld),5,2 ) ) + "-" + AllTrim( Substr( DTOS(dDTVld),1,4 ) ) +"^FS"
+				cZPL += "^XZ"
+
+				MscbBegin( 1, 6 )
+				MscbWrite( cZPL )
+				cRet := MscbEnd()
+
+			Next nX
+
+			SD1->(Reclock("SD1",.F.))
+			SD1->D1_XMARCA := "X"
+			SD1->(MSUnlock())
+		ENDIF
+	ENDIF
+Return cRet
+
+User Function PSTX141(cCodEti)
+	Local nX 		:= 0
+
+	Local dDTCria  := ""
+	Local cTipo    := ""
+	Local cCodPrd  :=  ""
+	Local cDescPrd := ""
+	Local xQuant   := 0
+	Local nQtdOri  := ""
+	Local cUser    := ""
+	Local cLocal    := ""
+	Local cLote     := ""
+	Local dDTVld    := ""
+	Local dDtFab    := ""
+	Local cOp       := ""
+	Local cPesagem  := ""
+	Local cFornece    := ""
+	Local cLojaFor    := ""
+	Local cNFor    	  := ""
+	Local cNFent      := ""
+	Local cNFSerE     := ""
+	Local cItemNFE    := ""
+	Local cVolume     := ""
+	Local cPDV    	  := ""
+	Local cNFSai   	  := ""
+	Local cNFSerS     := ""
+	Local cItemNFS    := ""
+	Local xcopias     := 0
+	Local FLote 	  	:= ""
+	Local cRet			:= ""
+
+	Default cCodEti  := ""
+
+
+	ZZC->(DbSetOrder(1))
+
+	IF ZZC->(dbSeek(xFilial("ZZC") + cCodEti))
+
+		// Imprime etiqueta
+		cCodEti  := ZZC->ZZC_CODETI
+		dDTCria  := ZZC->ZZC_DTCRIA
+		cTipo    := ZZC->ZZC_TIPO
+		cCodPrd  := ZZC->ZZC_CODPRD
+		cDescPrd := ZZC->ZZC_DESC
+		xQuant   := ZZC->ZZC_QUANT
+		nQtdOri  := ZZC->ZZC_QTDORI
+		cUser    := ZZC->ZZC_USER
+
+		cLocal    := ZZC->ZZC_LOCAL
+		cLote     := ZZC->ZZC_LOTE
+		dDTVld    := ZZC->ZZC_DTVLD
+		dDtFab    := ZZC->ZZC_DTFABR
+		cOp       := ZZC->ZZC_OP
+		cPesagem  := ZZC->ZZC_OPES
+
+		cFornece    := ZZC->ZZC_FORN
+		cLojaFor    := ZZC->ZZC_LOJA
+		cNFor    	:= ZZC->ZZC_NFORNE
+		cNFent    	:= ZZC->ZZC_NFENT
+		cNFSerE    	:= ZZC->ZZC_NFSER
+		cItemNFE    := ZZC->ZZC_ITEMNF
+		cVolume    	:= ZZC->ZZC_VOLUME
+		cPDV    	:= ZZC->ZZC_PDV
+		cNFSai   	:= ZZC->ZZC_NFSAI
+		cNFSerS   	:= ZZC->ZZC_SERNF
+		cItemNFS    := ZZC->ZZC_NFITEM
+		FLote		:= ZZC->ZZC_FLOTE
+
+
+		cZPL := ""
+		cZPL += "^XA""
+		cZPL += "^MMT"
+		cZPL += "^PW832"
+		cZPL += "^LL0960"
+		cZPL += "^CF0,75"
+		cZPL += "^FO140,150^FD"	+ FWNoAccent(cCodPrd) +"^FS"
+		cZPL += "^CF5,30"
+		cZPL += "^FO150,230^FD"	+ FWNoAccent(cDescPrd) +"^FS"
+		cZPL += "^CF5,25"
+		cZPL += "^FO80,300^FDFORN:^FS"
+		cZPL += "^CF5,25"
+		cZPL += "^FO170,300^FD"+ FWNoAccent(cNFor) +"^FS"
+		cZPL += "^CF5,25"
+		cZPL += "^FO80,330^FDCONTEUDO:^FS"
+		cZPL += "^CF0,25"
+		cZPL += "^FO250,330^FD"	+ AllTrim( Str( xQuant ) ) + "/" + AllTrim( Str( nQtdOri ) ) + "^FS"
+		cZPL += "^CF5,25"
+		cZPL += "^FO80,360^FDVOLUME:^FS"
+		cZPL += "^CF0,25"
+		cZPL += "^FO190,530^FDE0:^FS"
+		cZPL +=  "^CF0,30"
+		cZPL += "^FO210,360^FD"	+ AllTrim( Str( nX ) ) + "/" + AllTrim( Str( xcopias ) ) + "^FS"
+		cZPL += "^FO230,420^BY2"
+		cZPL += "^BCN,135,Y,N,N,N"
+		cZPL += "^FD" + cCodEti + "^FS"
+		cZPL += "^CF5,30"
+		cZPL += "^FO130,610^FDLOTE:^FS"
+		cZPL += "^CF0,40"
+		cZPL += "^FO80,640^FD"	+ FWNoAccent(cLote) +"^FS"
+		cZPL += "^CF5,30"
+		cZPL += "^FO610,610^FDVAL:^FS"
+		cZPL += "^CF0,40"
+		//cZPL += "^FO530,640^FD"	+ DTOC(dDTVld) +"^FS"
+		cZPL += "^FO530,640^FD"	+ AllTrim( Substr( DTOS(dDTVld),7,2 ) ) + "-" + AllTrim( Substr( DTOS(dDTVld),5,2 ) ) + "-" + AllTrim( Substr( DTOS(dDTVld),1,4 ) ) +"^FS"
+		cZPL += "^XZ"
+
+		MscbBegin( 1, 6 )
+		MscbWrite( cZPL )
+		cRet := MscbEnd()
+	endif
+Return cRet
+
